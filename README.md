@@ -1,3 +1,6 @@
+> **pi0.5 SFT configs live here.** This repo adds ManiGuard pi0.5 LoRA SFT tasks on top of
+> openpi — see **[SFT.md](SFT.md)** for training. openpi's own documentation follows below.
+
 # openpi
 
 openpi holds open-source models and packages for robotics, published by the [Physical Intelligence team](https://www.physicalintelligence.company/).
