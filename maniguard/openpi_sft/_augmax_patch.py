@@ -18,14 +18,14 @@ leaf falls back element-wise to the original (un-augmented) input.
 
 Behaviour-preserving by construction: for finite outputs
 ``where(isfinite(out), out, input) == out``, so normal augmentation (and the
-already-trained dusty/jar runs) is bit-identical; only the rare pathological,
+already-trained runs) is bit-identical; only the rare pathological,
 non-finite augmentation is neutralized (that image is left un-augmented that
 step). We intentionally do NOT clamp the pixel range here -- ``ColorJitter`` can
 legitimately push values slightly outside [0, 1], and clamping would alter
 normal augmentation.
 
-Mirrors how ``maniguard/_omnigibson_patches.py`` keeps ManiGuard fixes out of the
-OmniGibson tree -- here we keep them out of openpi (and out of augmax's source).
+This keeps the fix out of openpi (and out of augmax's source): it is applied at
+import time by ``maniguard.openpi_sft`` rather than by editing either package.
 """
 
 from __future__ import annotations

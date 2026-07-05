@@ -1,8 +1,8 @@
 """ManiGuard-owned openpi ``DataConfig`` factories for SFT.
 
-Kept in ManiGuard (not appended to openpi's vendored ``config.py``) so openpi
-stays a pristine, parallel clone. ``train_configs.register`` attaches the
-TrainConfigs that use these into openpi's registry at import time.
+Defined here (not appended to openpi's ``config.py``) so openpi's own source is
+not modified. ``train_configs.register`` attaches the TrainConfigs that use
+these into openpi's registry at import time.
 """
 
 from __future__ import annotations
