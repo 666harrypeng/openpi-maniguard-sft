@@ -1,0 +1,19 @@
+# docker compose -f docker/sft.compose.yml run --rm sft --config <config-name>
+services:
+  sft:
+    build:
+      context: ..
+      dockerfile: docker/sft.Dockerfile
+    image: maniguard-sft
+    environment:
+      - HF_TOKEN
+      - WANDB_API_KEY
+    volumes:
+      - ../outputs:/app/outputs
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
