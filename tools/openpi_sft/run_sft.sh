@@ -156,6 +156,20 @@ echo "[run_sft] openpi_root=$OPENPI_ROOT data_home=$OPENPI_DATA_HOME"
 [[ -n "$PUSH_REPO" ]] && echo "[run_sft] push -> $PUSH_REPO (private=$PUSH_PRIVATE)" \
                       || echo "[run_sft] push disabled"
 
+# Without --norm-stats, train from the repo's committed norm-stats
+# (norm_stats/<config>/<repo_id>/norm_stats.json). Fail loud if neither the
+# flag nor committed stats are present (guards silent unnormalized training).
+if [[ "$NORM_STATS" == "0" ]]; then
+  if [[ -d "$REPO_ROOT/norm_stats/$CONFIG" ]]; then
+    ASSETS_BASE="$REPO_ROOT/norm_stats"
+    echo "[run_sft] using committed norm-stats: $ASSETS_BASE/$CONFIG"
+  else
+    echo "ERROR: no norm-stats for $CONFIG." >&2
+    echo "       ship norm_stats/$CONFIG/<repo_id>/norm_stats.json, or pass --norm-stats." >&2
+    exit 1
+  fi
+fi
+
 BASE_ARGS=( --assets-base-dir "$ASSETS_BASE" --checkpoint-base-dir "$CKPT_BASE" )
 # norm-stats writes into the SAME assets dir training reads (--assets-base-dir),
 # else training silently runs unnormalized (openpi swallows missing norm stats).
