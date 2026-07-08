@@ -1,13 +1,17 @@
 # pi0.5 LoRA SFT
 
 This repo is [openpi](https://github.com/Physical-Intelligence/openpi) with added pi0.5
-LoRA supervised-fine-tuning configs for two manipulation task families, trained from the
+LoRA supervised-fine-tuning configs for four manipulation task families, trained from the
 `pi05_base` checkpoint on joint-space demonstration datasets.
 
-| Config | Dataset | Task |
-|---|---|---|
-| `pi05-base_datagen_v1_clutter_joint_2cam_lora` | [`IDEAS-Lab-Northwestern/datagen-clutter-v1-joint-5cam`](https://huggingface.co/datasets/IDEAS-Lab-Northwestern/datagen-clutter-v1-joint-5cam) | pick the target out of a cluttered tabletop into the goal |
-| `pi05-base_datagen_v1_cabinet_joint_2cam_lora` | [`IDEAS-Lab-Northwestern/datagen-cabinet-v1-joint-5cam`](https://huggingface.co/datasets/IDEAS-Lab-Northwestern/datagen-cabinet-v1-joint-5cam) | open a drawer, place the object inside, close it |
+Progress: check off a family once its SFT run is done (edit `[ ]` -> `[x]`).
+
+| Done | Config | Dataset | Task |
+|---|---|---|---|
+| [ ] | `pi05-base_datagen_v1_clutter_joint_2cam_lora` | [`IDEAS-Lab-Northwestern/datagen-clutter-v1-joint-5cam`](https://huggingface.co/datasets/IDEAS-Lab-Northwestern/datagen-clutter-v1-joint-5cam) | pick the target out of a cluttered tabletop into the goal |
+| [ ] | `pi05-base_datagen_v1_cabinet_joint_2cam_lora` | [`IDEAS-Lab-Northwestern/datagen-cabinet-v1-joint-5cam`](https://huggingface.co/datasets/IDEAS-Lab-Northwestern/datagen-cabinet-v1-joint-5cam) | open a drawer, place the object inside, close it |
+| [ ] | `pi05-base_datagen_v1_stack_joint_2cam_lora` | [`IDEAS-Lab-Northwestern/datagen-stack-v1-joint-5cam`](https://huggingface.co/datasets/IDEAS-Lab-Northwestern/datagen-stack-v1-joint-5cam) | unstack the 3-object pile onto a re-stack pile aside, then retrieve the exposed bottom target into the goal |
+| [ ] | `pi05-base_datagen_v1_jar_joint_2cam_lora` | [`IDEAS-Lab-Northwestern/datagen-jar-v1-joint-5cam`](https://huggingface.co/datasets/IDEAS-Lab-Northwestern/datagen-jar-v1-joint-5cam) | close the jar's lid, then carry the closed jar into the goal |
 
 Data: LeRobot v2.1, FrankaPanda absolute joint, 5 camera streams (the external `image_left`
 overview + `wrist_image` are consumed; joints are converted to per-step deltas at train time).
@@ -37,8 +41,9 @@ uv run tools/openpi_sft/run_sft.sh --config pi05-base_datagen_v1_cabinet_joint_2
 
 `run_sft.sh` runs a 100-step smoke test, then full training, streaming each checkpoint to the
 config's model repo (`IDEAS-Lab-Northwestern/pi05-base-datagen-v1-<family>-joint-2cam-lora`) as
-it finalizes. Norm-stats are committed under `norm_stats/` and read automatically — no compute
-step. Run artifacts (checkpoints, logs) go under `outputs/sft_runs/<exp>/`.
+it finalizes. Norm-stats: a family with committed `norm_stats/` is read automatically (turnkey, no
+compute); a family shipped config-only has them computed on the fly before training. Run artifacts
+(checkpoints, logs) go under `outputs/sft_runs/<exp>/`.
 
 Only `--config` is required; `--exp`, the push repo, and run length default from the config.
 Common overrides: `--batch N`, `--steps N`, `--no-push`, `--smoke-only`. Recompute norm-stats
@@ -65,5 +70,7 @@ run --rm sft --config <name>`.
 
 ## Adding a family
 
-Append a `TrainConfig` block to `maniguard/openpi_sft/train_configs.py` and drop its
-`norm_stats/<config>/<repo_id>/norm_stats.json` into place; it becomes launchable by name.
+Append a `TrainConfig` block to `maniguard/openpi_sft/train_configs.py`; it becomes launchable by
+name. Committing its `norm_stats/<config>/<repo_id>/norm_stats.json` is OPTIONAL — do it for an
+instant-start turnkey run; otherwise ship config-only and `run_sft.sh` computes the norm-stats on
+the fly before the first training.

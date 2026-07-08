@@ -138,6 +138,109 @@ def _build_configs() -> list[TrainConfig]:
             ).get_freeze_filter(),
             ema_decay=None,
         ),
+        # Sim stack-retrieve (unstack the 3 same-object top pile onto a re-stack
+        # pile aside, then retrieve the exposed bottom target into the green goal
+        # sphere), LIBERO 2-cam, JOINT controller.
+        # Dataset: IDEAS-Lab-Northwestern/datagen-stack-v1-joint-5cam (28 base
+        #   tasks x 40 = 1120 demos; same 5-cam->2-cam + joint semantics as above).
+        # Scale: 2 epochs over the 2,652,083-frame set at batch 128
+        #   (2_652_083 * 2 / 128 = 41,439 -> rounded up to 41,500).
+        TrainConfig(
+            name="pi05-base_datagen_v1_stack_joint_2cam_lora",
+            project_name="maniguard-sft",
+            policy_metadata={
+                "hf_repo": "IDEAS-Lab-Northwestern/pi05-base-datagen-v1-stack-joint-2cam-lora",
+                "hf_private": False,
+                "default_exp": "datagen_v1_stack_joint_2cam",
+            },
+            model=pi0_config.Pi0Config(
+                pi05=True,
+                action_dim=32,
+                action_horizon=16,
+                paligemma_variant="gemma_2b_lora",
+                action_expert_variant="gemma_300m_lora",
+                dtype="bfloat16",
+                discrete_state_input=True,
+            ),
+            data=Sim2CamLiberoDataConfig(
+                repo_id="IDEAS-Lab-Northwestern/datagen-stack-v1-joint-5cam",
+                base_config=DataConfig(prompt_from_task=True),
+                use_delta_joint_actions=True,
+                external_cam="left",
+            ),
+            weight_loader=weight_loaders.CheckpointWeightLoader(_PI05_BASE),
+            lr_schedule=_optimizer.CosineDecaySchedule(
+                warmup_steps=1_250,
+                peak_lr=7e-5,
+                decay_steps=41_500,
+                decay_lr=7e-6,
+            ),
+            num_train_steps=41_500,
+            batch_size=128,
+            num_workers=48,  # dataloader workers -- primary throughput knob
+            log_interval=100,
+            fsdp_devices=1,  # full data parallelism, model replicated per device
+            keep_period=8_300,  # steps // 5 -> ~5 evenly-spaced checkpoints
+            freeze_filter=pi0_config.Pi0Config(
+                pi05=True,
+                action_dim=32,
+                action_horizon=16,
+                paligemma_variant="gemma_2b_lora",
+                action_expert_variant="gemma_300m_lora",
+            ).get_freeze_filter(),
+            ema_decay=None,
+        ),
+        # Sim jar-transport (close a hinged jar's lid, then carry the closed jar
+        # into the green goal sphere on the table), LIBERO 2-cam, JOINT controller.
+        # Dataset: IDEAS-Lab-Northwestern/datagen-jar-v1-joint-5cam (26 base
+        #   tasks x 40 = 1040 demos; same 5-cam->2-cam + joint semantics as above).
+        # Scale: 2 epochs over the 946,870-frame set at batch 128
+        #   (946_870 * 2 / 128 = 14,795 -> rounded up to 14,800).
+        TrainConfig(
+            name="pi05-base_datagen_v1_jar_joint_2cam_lora",
+            project_name="maniguard-sft",
+            policy_metadata={
+                "hf_repo": "IDEAS-Lab-Northwestern/pi05-base-datagen-v1-jar-joint-2cam-lora",
+                "hf_private": False,
+                "default_exp": "datagen_v1_jar_joint_2cam",
+            },
+            model=pi0_config.Pi0Config(
+                pi05=True,
+                action_dim=32,
+                action_horizon=16,
+                paligemma_variant="gemma_2b_lora",
+                action_expert_variant="gemma_300m_lora",
+                dtype="bfloat16",
+                discrete_state_input=True,
+            ),
+            data=Sim2CamLiberoDataConfig(
+                repo_id="IDEAS-Lab-Northwestern/datagen-jar-v1-joint-5cam",
+                base_config=DataConfig(prompt_from_task=True),
+                use_delta_joint_actions=True,
+                external_cam="left",
+            ),
+            weight_loader=weight_loaders.CheckpointWeightLoader(_PI05_BASE),
+            lr_schedule=_optimizer.CosineDecaySchedule(
+                warmup_steps=450,
+                peak_lr=7e-5,
+                decay_steps=14_800,
+                decay_lr=7e-6,
+            ),
+            num_train_steps=14_800,
+            batch_size=128,
+            num_workers=48,  # dataloader workers -- primary throughput knob
+            log_interval=100,
+            fsdp_devices=1,  # full data parallelism, model replicated per device
+            keep_period=2_960,  # steps // 5 -> ~5 evenly-spaced checkpoints
+            freeze_filter=pi0_config.Pi0Config(
+                pi05=True,
+                action_dim=32,
+                action_horizon=16,
+                paligemma_variant="gemma_2b_lora",
+                action_expert_variant="gemma_300m_lora",
+            ).get_freeze_filter(),
+            ema_decay=None,
+        ),
     ]
 
 

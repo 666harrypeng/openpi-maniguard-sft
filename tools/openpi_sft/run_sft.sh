@@ -35,7 +35,9 @@
 #   --steps N          num_train_steps override
 #   --batch N          batch_size override
 #   --keep-period N    keep_period override (checkpoint cadence)
-#   --norm-stats       run compute_norm_stats before training (sim configs need this)
+#   --norm-stats       force a fresh compute_norm_stats. DEFAULT (no flag): use the
+#                      committed norm_stats/<config>/, or if a config ships without
+#                      any, compute them on the fly before training (never unnormalized).
 #   --no-smoke         skip the 100-step smoke test
 #   --smoke-only       run only the smoke test, then exit
 #   --resume           pass --resume to openpi (continue from last ckpt)
@@ -156,17 +158,19 @@ echo "[run_sft] openpi_root=$OPENPI_ROOT data_home=$OPENPI_DATA_HOME"
 [[ -n "$PUSH_REPO" ]] && echo "[run_sft] push -> $PUSH_REPO (private=$PUSH_PRIVATE)" \
                       || echo "[run_sft] push disabled"
 
-# Without --norm-stats, train from the repo's committed norm-stats
-# (norm_stats/<config>/<repo_id>/norm_stats.json). Fail loud if neither the
-# flag nor committed stats are present (guards silent unnormalized training).
+# Norm-stats resolution (unless --norm-stats forces a fresh compute):
+#   1. committed norm_stats/<config>/<repo_id>/norm_stats.json  -> use it (turnkey); or
+#   2. no committed stats -> COMPUTE ON THE FLY into the run's assets dir, then train.
+# This lets a family ship CONFIG-ONLY (no baked stats): the first run computes them.
+# openpi's compute_norm_stats is deterministic over the full dataset, so on-the-fly
+# yields exactly what a baked file would hold. Never trains silently unnormalized.
 if [[ "$NORM_STATS" == "0" ]]; then
   if [[ -d "$REPO_ROOT/norm_stats/$CONFIG" ]]; then
     ASSETS_BASE="$REPO_ROOT/norm_stats"
     echo "[run_sft] using committed norm-stats: $ASSETS_BASE/$CONFIG"
   else
-    echo "ERROR: no norm-stats for $CONFIG." >&2
-    echo "       ship norm_stats/$CONFIG/<repo_id>/norm_stats.json, or pass --norm-stats." >&2
-    exit 1
+    echo "[run_sft] no committed norm-stats for $CONFIG -> computing on the fly into $ASSETS_BASE"
+    NORM_STATS=1   # fall through to the compute block below (writes RUN_DIR/assets; training reads it)
   fi
 fi
 
