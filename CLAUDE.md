@@ -1,19 +1,24 @@
 # CLAUDE.md
 
 This repository is [openpi](https://github.com/Physical-Intelligence/openpi) extended with pi0.5
-LoRA supervised-fine-tuning (SFT) configs for two manipulation task families. The full training
-guide is **[SFT.md](SFT.md)** — read it before running anything.
+LoRA supervised-fine-tuning (SFT) configs for four manipulation task families. The full training
+guide is **[SFT.md](SFT.md)** — read it before running anything (it has the per-family task table).
 
 ## What this repo does
 
 Fine-tunes pi0.5 (warm-started from `pi05_base`, LoRA) on joint-space demonstration datasets.
-Two configs:
+Four configs (one per family — clutter, cabinet, stack, jar):
 
 - `pi05-base_datagen_v1_clutter_joint_2cam_lora`
 - `pi05-base_datagen_v1_cabinet_joint_2cam_lora`
+- `pi05-base_datagen_v1_stack_joint_2cam_lora`
+- `pi05-base_datagen_v1_jar_joint_2cam_lora`
 
-Config definitions live in `maniguard/openpi_sft/train_configs.py`. Norm-stats are committed under
-`norm_stats/` and read automatically — no separate compute step.
+Config definitions live in `maniguard/openpi_sft/train_configs.py`; each config's dataset + task are
+in the [SFT.md](SFT.md) table. Norm-stats: **clutter and cabinet** have theirs committed under
+`norm_stats/` (read automatically — instant start); **stack and jar** ship config-only, so
+`run_sft.sh` computes their norm-stats on the fly before the first training (a one-time CPU step, no
+manual action). Either way you just pass `--config`.
 
 ## Running SFT
 
