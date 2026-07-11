@@ -39,3 +39,30 @@ repo. The non-container (uv) path and all options are in [SFT.md](SFT.md).
 The hyperparameters in `train_configs.py` are defaults tuned for a particular machine. **Always
 double-check this node's actual compute resources (GPU count and memory, CPU) and adjust the
 config before a full run** — most importantly `batch_size`, `num_workers`, and `fsdp_devices`.
+
+### Dataloader throughput (verify these against THIS node before trusting them)
+
+Training is a single JAX process with one DataLoader whose `num_workers` worker processes decode
+the dataset's video frames. Two settings govern whether the GPUs stay fed; both ship with
+defaults that you should **re-derive for this node's CPU rather than assume**:
+
+- **Per-worker thread caps** — `run_sft.sh` and `docker/sft.Dockerfile` set
+  `OMP_NUM_THREADS=MKL_NUM_THREADS=OPENBLAS_NUM_THREADS=NUMEXPR_NUM_THREADS=1`. Without this,
+  every worker's BLAS/OMP tries to grab all cores, the workers oversubscribe the CPU and thrash,
+  and the dataloader stalls for minutes at a time. Confirm it is actually in effect on this node:
+  `echo $OMP_NUM_THREADS` inside the run should print `1`.
+- **`num_workers` (default 72)** — with threads capped, this is what decides how many cores decode
+  in parallel. 72 assumes a host with roughly 96 physical cores (fill the cores, leave headroom
+  for the JAX host process). **Check this node's real core count** (`nproc` / `lscpu`) and adjust:
+  aim for a bit below the PHYSICAL core count, not the logical/hyperthread count. Override without
+  editing the config via `--num-workers <n>`.
+
+**Sanity-check that it's actually working**, don't just trust the numbers: after launch the
+"Initialized data loader" line should appear within ~1-2 minutes (a much longer init means the
+workers are still thrashing — the thread caps are not taking effect), and `nvidia-smi` GPU
+utilization should be steady/high rather than a sawtooth of bursts and multi-minute idle stalls.
+If it is still a sawtooth **even with the caps confirmed and `num_workers` sized to the cores**,
+the bottleneck is the video-decode itself (the datasets are stored as AV1, which is slow to
+random-access decode on CPU); the fix then is GPU/NVDEC decode or transcoding the dataset to
+H.264, not more workers. In short: treat the shipped values as a starting point and **objectively
+verify they are right for this specific machine.**
