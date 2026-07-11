@@ -23,6 +23,13 @@ ENV UV_LINK_MODE=copy
 ENV UV_PROJECT_ENVIRONMENT=/.venv
 ENV UV_FROZEN=1
 ENV PATH="/.venv/bin:${PATH}"
+# Cap per-worker math threads so the dataloader's num_workers processes don't
+# oversubscribe the CPU (see run_sft.sh for the full rationale). run_sft.sh also
+# sets these with := defaults; the ENV makes them authoritative for any entry.
+ENV OMP_NUM_THREADS=1
+ENV MKL_NUM_THREADS=1
+ENV OPENBLAS_NUM_THREADS=1
+ENV NUMEXPR_NUM_THREADS=1
 
 # Install dependencies first, in a cached layer that only busts when the
 # lockfile / client package changes.

@@ -74,7 +74,10 @@ def _build_configs() -> list[TrainConfig]:
             ),
             num_train_steps=14_100,
             batch_size=128,
-            num_workers=48,  # dataloader workers -- primary throughput knob
+            num_workers=72,  # dataloader workers -- primary throughput knob;
+            #                  ~= physical cores minus headroom for the JAX host
+            #                  process. Pure perf knob (no training-dynamics
+            #                  effect); override per host with --num-workers.
             log_interval=100,
             fsdp_devices=1,  # full data parallelism, model replicated per device
             keep_period=2_820,  # steps // 5 -> ~5 evenly-spaced checkpoints
@@ -125,7 +128,10 @@ def _build_configs() -> list[TrainConfig]:
             ),
             num_train_steps=65_250,
             batch_size=128,
-            num_workers=48,  # dataloader workers -- primary throughput knob
+            num_workers=72,  # dataloader workers -- primary throughput knob;
+            #                  ~= physical cores minus headroom for the JAX host
+            #                  process. Pure perf knob (no training-dynamics
+            #                  effect); override per host with --num-workers.
             log_interval=100,
             fsdp_devices=1,  # full data parallelism, model replicated per device
             keep_period=13_050,  # steps // 5 -> ~5 evenly-spaced checkpoints
@@ -177,7 +183,10 @@ def _build_configs() -> list[TrainConfig]:
             ),
             num_train_steps=41_500,
             batch_size=128,
-            num_workers=48,  # dataloader workers -- primary throughput knob
+            num_workers=72,  # dataloader workers -- primary throughput knob;
+            #                  ~= physical cores minus headroom for the JAX host
+            #                  process. Pure perf knob (no training-dynamics
+            #                  effect); override per host with --num-workers.
             log_interval=100,
             fsdp_devices=1,  # full data parallelism, model replicated per device
             keep_period=8_300,  # steps // 5 -> ~5 evenly-spaced checkpoints
@@ -228,7 +237,10 @@ def _build_configs() -> list[TrainConfig]:
             ),
             num_train_steps=14_800,
             batch_size=128,
-            num_workers=48,  # dataloader workers -- primary throughput knob
+            num_workers=72,  # dataloader workers -- primary throughput knob;
+            #                  ~= physical cores minus headroom for the JAX host
+            #                  process. Pure perf knob (no training-dynamics
+            #                  effect); override per host with --num-workers.
             log_interval=100,
             fsdp_devices=1,  # full data parallelism, model replicated per device
             keep_period=2_960,  # steps // 5 -> ~5 evenly-spaced checkpoints

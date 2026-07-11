@@ -54,6 +54,20 @@
 #   WANDB_API_KEY     required (training logs)
 set -euo pipefail
 
+# --- CPU thread caps (CRITICAL for multi-worker dataloading) ----------------
+# openpi training is a single JAX process with ONE DataLoader feeding all GPUs
+# via `num_workers` worker PROCESSES. Each worker decodes video + runs
+# numpy/BLAS. On a multi-GPU host num_workers is large; left uncapped, every
+# worker's BLAS/OMP grabs ALL cores, so the workers oversubscribe the CPU and
+# thrash -- a very slow dataloader init and periodic multi-minute stalls every
+# `num_workers` steps (the prefetch buffer drains faster than the thrashing
+# workers can refill). Pinning one math thread per worker restores true N-way
+# parallel decode. JAX/XLA is unaffected (it uses its own threadpool).
+: "${OMP_NUM_THREADS:=1}"; export OMP_NUM_THREADS
+: "${MKL_NUM_THREADS:=1}"; export MKL_NUM_THREADS
+: "${OPENBLAS_NUM_THREADS:=1}"; export OPENBLAS_NUM_THREADS
+: "${NUMEXPR_NUM_THREADS:=1}"; export NUMEXPR_NUM_THREADS
+
 CONFIG=""; EXP=""; STEPS=""; BATCH=""; KEEP_PERIOD=""
 NORM_STATS=0; SMOKE=1; SMOKE_ONLY=0; RESUME=0; OVERWRITE=0
 PUSH_REPO=""; NO_PUSH=0; PUSH_PRIVATE=""; POLL_INTERVAL=30
