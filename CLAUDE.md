@@ -7,18 +7,20 @@ guide is **[SFT.md](SFT.md)** — read it before running anything (it has the pe
 ## What this repo does
 
 Fine-tunes pi0.5 (warm-started from `pi05_base`, LoRA) on joint-space demonstration datasets.
-Four configs (one per family — clutter, cabinet, stack, jar):
+Six configs (one per family — clutter, cabinet, stack, jar, lid, dusty):
 
 - `pi05-base_datagen_v1_clutter_joint_2cam_lora`
 - `pi05-base_datagen_v1_cabinet_joint_2cam_lora`
 - `pi05-base_datagen_v1_stack_joint_2cam_lora`
 - `pi05-base_datagen_v1_jar_joint_2cam_lora`
+- `pi05-base_datagen_v1_lid_joint_2cam_lora`
+- `pi05-base_datagen_v1_dusty_joint_2cam_lora`
 
 Config definitions live in `maniguard/openpi_sft/train_configs.py`; each config's dataset + task are
 in the [SFT.md](SFT.md) table. Norm-stats: **clutter and cabinet** have theirs committed under
-`norm_stats/` (read automatically — instant start); **stack and jar** ship config-only, so
-`run_sft.sh` computes their norm-stats on the fly before the first training (a one-time CPU step, no
-manual action). Either way you just pass `--config`.
+`norm_stats/` (read automatically — instant start); **stack, jar, lid and dusty** ship config-only,
+so `run_sft.sh` computes their norm-stats on the fly before the first training (a one-time CPU step,
+no manual action). Either way you just pass `--config`.
 
 ## Running SFT
 

@@ -12,6 +12,8 @@ Progress: check off a family once its SFT run is done (edit `[ ]` -> `[x]`).
 | [ ] | `pi05-base_datagen_v1_cabinet_joint_2cam_lora` | [`IDEAS-Lab-Northwestern/datagen-cabinet-v1-joint-5cam`](https://huggingface.co/datasets/IDEAS-Lab-Northwestern/datagen-cabinet-v1-joint-5cam) | open a drawer, place the object inside, close it |
 | [ ] | `pi05-base_datagen_v1_stack_joint_2cam_lora` | [`IDEAS-Lab-Northwestern/datagen-stack-v1-joint-5cam`](https://huggingface.co/datasets/IDEAS-Lab-Northwestern/datagen-stack-v1-joint-5cam) | unstack the 3-object pile onto a re-stack pile aside, then retrieve the exposed bottom target into the goal |
 | [ ] | `pi05-base_datagen_v1_jar_joint_2cam_lora` | [`IDEAS-Lab-Northwestern/datagen-jar-v1-joint-5cam`](https://huggingface.co/datasets/IDEAS-Lab-Northwestern/datagen-jar-v1-joint-5cam) | close the jar's lid, then carry the closed jar into the goal |
+| [ ] | `pi05-base_datagen_v1_lid_joint_2cam_lora` | [`IDEAS-Lab-Northwestern/datagen-lid-v1-joint-5cam`](https://huggingface.co/datasets/IDEAS-Lab-Northwestern/datagen-lid-v1-joint-5cam) | place the lid on the container, then carry the lidded container into the goal |
+| [ ] | `pi05-base_datagen_v1_dusty_joint_2cam_lora` | [`IDEAS-Lab-Northwestern/datagen-dusty-v1-joint-5cam`](https://huggingface.co/datasets/IDEAS-Lab-Northwestern/datagen-dusty-v1-joint-5cam) | wipe the dust from the container with the sponge, then pour the food from the carrier into it |
 
 Data: LeRobot v2.1, FrankaPanda absolute joint, 5 camera streams (the external `image_left`
 overview + `wrist_image` are consumed; joints are converted to per-step deltas at train time).

@@ -1,6 +1,6 @@
 """ManiGuard pi0.5 LoRA SFT TrainConfigs, registered into pristine openpi.
 
-Two task families (clutter pick-and-place, cabinet pickup), each a fully inline
+Six task families (clutter, cabinet, stack, jar, lid, dusty), each a fully inline
 ``TrainConfig`` (model + freeze_filter written out in full, no shared builders)
 so the whole recipe is readable at a glance. ``register()`` inserts them into
 openpi's ``_CONFIGS_DICT`` at import time, so openpi's ``scripts/train.py`` /
@@ -74,10 +74,10 @@ def _build_configs() -> list[TrainConfig]:
             ),
             num_train_steps=14_100,
             batch_size=128,
-            num_workers=72,  # dataloader workers -- primary throughput knob;
-            #                  ~= physical cores minus headroom for the JAX host
-            #                  process. Pure perf knob (no training-dynamics
-            #                  effect); override per host with --num-workers.
+            num_workers=48,  # dataloader workers -- the value proven to sustain full
+            #                  (GPU-compute-bound) throughput together with the thread
+            #                  caps in run_sft.sh; a pure perf knob (no training-dynamics
+            #                  effect), tune per host with --num-workers.
             log_interval=100,
             fsdp_devices=1,  # full data parallelism, model replicated per device
             keep_period=2_820,  # steps // 5 -> ~5 evenly-spaced checkpoints
@@ -128,10 +128,10 @@ def _build_configs() -> list[TrainConfig]:
             ),
             num_train_steps=65_250,
             batch_size=128,
-            num_workers=72,  # dataloader workers -- primary throughput knob;
-            #                  ~= physical cores minus headroom for the JAX host
-            #                  process. Pure perf knob (no training-dynamics
-            #                  effect); override per host with --num-workers.
+            num_workers=48,  # dataloader workers -- the value proven to sustain full
+            #                  (GPU-compute-bound) throughput together with the thread
+            #                  caps in run_sft.sh; a pure perf knob (no training-dynamics
+            #                  effect), tune per host with --num-workers.
             log_interval=100,
             fsdp_devices=1,  # full data parallelism, model replicated per device
             keep_period=13_050,  # steps // 5 -> ~5 evenly-spaced checkpoints
@@ -183,10 +183,10 @@ def _build_configs() -> list[TrainConfig]:
             ),
             num_train_steps=41_500,
             batch_size=128,
-            num_workers=72,  # dataloader workers -- primary throughput knob;
-            #                  ~= physical cores minus headroom for the JAX host
-            #                  process. Pure perf knob (no training-dynamics
-            #                  effect); override per host with --num-workers.
+            num_workers=48,  # dataloader workers -- the value proven to sustain full
+            #                  (GPU-compute-bound) throughput together with the thread
+            #                  caps in run_sft.sh; a pure perf knob (no training-dynamics
+            #                  effect), tune per host with --num-workers.
             log_interval=100,
             fsdp_devices=1,  # full data parallelism, model replicated per device
             keep_period=8_300,  # steps // 5 -> ~5 evenly-spaced checkpoints
@@ -237,13 +237,120 @@ def _build_configs() -> list[TrainConfig]:
             ),
             num_train_steps=14_800,
             batch_size=128,
-            num_workers=72,  # dataloader workers -- primary throughput knob;
-            #                  ~= physical cores minus headroom for the JAX host
-            #                  process. Pure perf knob (no training-dynamics
-            #                  effect); override per host with --num-workers.
+            num_workers=48,  # dataloader workers -- the value proven to sustain full
+            #                  (GPU-compute-bound) throughput together with the thread
+            #                  caps in run_sft.sh; a pure perf knob (no training-dynamics
+            #                  effect), tune per host with --num-workers.
             log_interval=100,
             fsdp_devices=1,  # full data parallelism, model replicated per device
             keep_period=2_960,  # steps // 5 -> ~5 evenly-spaced checkpoints
+            freeze_filter=pi0_config.Pi0Config(
+                pi05=True,
+                action_dim=32,
+                action_horizon=16,
+                paligemma_variant="gemma_2b_lora",
+                action_expert_variant="gemma_300m_lora",
+            ).get_freeze_filter(),
+            ema_decay=None,
+        ),
+        # lid_transport: pick the lid, place it on the container mouth (it auto-snaps),
+        #   grasp the now-lidded container, transport it into the goal region. 1200 demos.
+        # Config-only (no baked norm-stats) — run_sft.sh computes them on the first run.
+        # Scale: 2 epochs over the 1,055,142-frame set at batch 128
+        #   (1_055_142 * 2 / 128 = 16,487 -> rounded up to 16,500).
+        TrainConfig(
+            name="pi05-base_datagen_v1_lid_joint_2cam_lora",
+            project_name="maniguard-sft",
+            policy_metadata={
+                "hf_repo": "IDEAS-Lab-Northwestern/pi05-base-datagen-v1-lid-joint-2cam-lora",
+                "hf_private": False,
+                "default_exp": "datagen_v1_lid_joint_2cam",
+            },
+            model=pi0_config.Pi0Config(
+                pi05=True,
+                action_dim=32,
+                action_horizon=16,
+                paligemma_variant="gemma_2b_lora",
+                action_expert_variant="gemma_300m_lora",
+                dtype="bfloat16",
+                discrete_state_input=True,
+            ),
+            data=Sim2CamLiberoDataConfig(
+                repo_id="IDEAS-Lab-Northwestern/datagen-lid-v1-joint-5cam",
+                base_config=DataConfig(prompt_from_task=True),
+                use_delta_joint_actions=True,
+                external_cam="left",
+            ),
+            weight_loader=weight_loaders.CheckpointWeightLoader(_PI05_BASE),
+            lr_schedule=_optimizer.CosineDecaySchedule(
+                warmup_steps=500,
+                peak_lr=7e-5,
+                decay_steps=16_500,
+                decay_lr=7e-6,
+            ),
+            num_train_steps=16_500,
+            batch_size=128,
+            num_workers=48,  # dataloader workers -- the value proven to sustain full
+            #                  (GPU-compute-bound) throughput together with the thread
+            #                  caps in run_sft.sh; a pure perf knob (no training-dynamics
+            #                  effect), tune per host with --num-workers.
+            log_interval=100,
+            fsdp_devices=1,  # full data parallelism, model replicated per device
+            keep_period=3_300,  # steps // 5 -> ~5 evenly-spaced checkpoints
+            freeze_filter=pi0_config.Pi0Config(
+                pi05=True,
+                action_dim=32,
+                action_horizon=16,
+                paligemma_variant="gemma_2b_lora",
+                action_expert_variant="gemma_300m_lora",
+            ).get_freeze_filter(),
+            ema_decay=None,
+        ),
+        # dusty_transfer: wipe the dust out of the container with the sponge, return the
+        #   sponge, pick the source carrier with the food riding upright, tilt-pour the
+        #   food into the container. 1040 demos.
+        # Config-only (no baked norm-stats) — run_sft.sh computes them on the first run.
+        # Scale: 2 epochs over the 1,879,498-frame set at batch 128
+        #   (1_879_498 * 2 / 128 = 29,368 -> rounded up to 29,400).
+        TrainConfig(
+            name="pi05-base_datagen_v1_dusty_joint_2cam_lora",
+            project_name="maniguard-sft",
+            policy_metadata={
+                "hf_repo": "IDEAS-Lab-Northwestern/pi05-base-datagen-v1-dusty-joint-2cam-lora",
+                "hf_private": False,
+                "default_exp": "datagen_v1_dusty_joint_2cam",
+            },
+            model=pi0_config.Pi0Config(
+                pi05=True,
+                action_dim=32,
+                action_horizon=16,
+                paligemma_variant="gemma_2b_lora",
+                action_expert_variant="gemma_300m_lora",
+                dtype="bfloat16",
+                discrete_state_input=True,
+            ),
+            data=Sim2CamLiberoDataConfig(
+                repo_id="IDEAS-Lab-Northwestern/datagen-dusty-v1-joint-5cam",
+                base_config=DataConfig(prompt_from_task=True),
+                use_delta_joint_actions=True,
+                external_cam="left",
+            ),
+            weight_loader=weight_loaders.CheckpointWeightLoader(_PI05_BASE),
+            lr_schedule=_optimizer.CosineDecaySchedule(
+                warmup_steps=900,
+                peak_lr=7e-5,
+                decay_steps=29_400,
+                decay_lr=7e-6,
+            ),
+            num_train_steps=29_400,
+            batch_size=128,
+            num_workers=48,  # dataloader workers -- the value proven to sustain full
+            #                  (GPU-compute-bound) throughput together with the thread
+            #                  caps in run_sft.sh; a pure perf knob (no training-dynamics
+            #                  effect), tune per host with --num-workers.
+            log_interval=100,
+            fsdp_devices=1,  # full data parallelism, model replicated per device
+            keep_period=5_880,  # steps // 5 -> ~5 evenly-spaced checkpoints
             freeze_filter=pi0_config.Pi0Config(
                 pi05=True,
                 action_dim=32,
