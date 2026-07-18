@@ -1,7 +1,7 @@
 # pi0.5 LoRA SFT
 
 This repo is [openpi](https://github.com/Physical-Intelligence/openpi) with added pi0.5
-LoRA supervised-fine-tuning configs for four manipulation task families, trained from the
+LoRA supervised-fine-tuning configs for six manipulation task families, trained from the
 `pi05_base` checkpoint on joint-space demonstration datasets.
 
 Progress: check off a family once its SFT run is done (edit `[ ]` -> `[x]`).
@@ -41,10 +41,14 @@ uv run tools/openpi_sft/run_sft.sh --config pi05-base_datagen_v1_clutter_joint_2
 uv run tools/openpi_sft/run_sft.sh --config pi05-base_datagen_v1_cabinet_joint_2cam_lora
 ```
 
-`run_sft.sh` runs a 100-step smoke test, then full training, streaming each checkpoint to the
+`run_sft.sh` first makes sure the dataset is fully on local disk (the first run of a family
+downloads it from the Hub with resume + backoff; later runs find the completion marker and start
+instantly), then runs a 100-step smoke test, then full training, streaming each checkpoint to the
 config's model repo (`IDEAS-Lab-Northwestern/pi05-base-datagen-v1-<family>-joint-2cam-lora`) as
-it finalizes. Norm-stats: a family with committed `norm_stats/` is read automatically (turnkey, no
-compute); a family shipped config-only has them computed on the fly before training. Run artifacts
+it finalizes. Every config trains 2 epochs and pushes exactly 4 checkpoints (one per half epoch);
+relaunching without `--resume` replaces the repo's previous checkpoints (latest-run-wins). Norm-stats: a family with committed `norm_stats/` is read automatically (turnkey, no
+compute); a family shipped config-only has them computed once before its first training and
+cached in `outputs/norm_stats/` for every later run. Run artifacts
 (checkpoints, logs) go under `outputs/sft_runs/<exp>/`.
 
 Only `--config` is required; `--exp`, the push repo, and run length default from the config.
@@ -53,9 +57,14 @@ against this exact openpi with `--norm-stats`.
 
 ### Throughput
 
-`num_workers` (dataloader workers, in the config) is the main throughput knob — if the GPUs
-wait on data, raise it toward the node's CPU-core count and cap thread oversubscription with
-`OMP_NUM_THREADS` (e.g. `export OMP_NUM_THREADS=4`) so the data workers don't thrash the CPU.
+Each run owns **all visible GPUs** (pure data parallelism): `batch_size=256` is the global
+batch, sharded 32 samples/card across 8 cards (`fsdp_devices=1`, bf16, ~23 GiB peak/card,
+measured ~100% parallel efficiency — 8 cards are 8× one card). No XLA memory env is needed
+(JAX's default preallocation is correct). `run_sft.sh` caps per-worker math threads
+(`OMP_NUM_THREADS=1` and friends) so the dataloader workers don't thrash the CPU; `num_workers`
+(default 48) supplies several times what the GPUs consume, but must stay below the host's
+physical core count — check `nproc` before a long run. If the GPUs sawtooth, the bottleneck is
+IO (dataset not on local disk), not video decode — see [CLAUDE.md](CLAUDE.md).
 
 ## Docker
 
