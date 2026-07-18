@@ -14,6 +14,7 @@ only contribute the task-specific config.
 
 from maniguard.openpi_sft._augmax_patch import apply as _apply_augmax_guard
 from maniguard.openpi_sft._lerobot_video_patch import apply as _apply_pyav_backend
+from maniguard.openpi_sft._vram_probe import apply as _apply_vram_probe
 from maniguard.openpi_sft.train_configs import register
 
 # Neutralize the rare non-finite output of openpi's training-time image
@@ -22,4 +23,7 @@ _apply_augmax_guard()
 # Fall back LeRobot video decode to PyAV where torchcodec's system FFmpeg is
 # unavailable (no-op where torchcodec works). See _lerobot_video_patch.
 _apply_pyav_backend()
+# Print VRAM at the batch / model+optimizer / first-step milestones, so the
+# memory cost of batch_size is visible in the run log. See _vram_probe.
+_apply_vram_probe()
 register()
