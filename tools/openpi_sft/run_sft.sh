@@ -35,13 +35,18 @@
 #   --steps N          num_train_steps override
 #   --batch N          batch_size override
 #   --keep-period N    keep_period override (checkpoint cadence)
-#   --norm-stats       force a fresh compute_norm_stats. DEFAULT (no flag): use the
-#                      committed norm_stats/<config>/, or if a config ships without
-#                      any, compute them on the fly before training (never unnormalized).
+#   --norm-stats       force a fresh compute_norm_stats (refreshes the shared cache).
+#                      DEFAULT (no flag): committed norm_stats/<config>/ if present,
+#                      else the shared cache outputs/norm_stats/<config>/ from an
+#                      earlier run, else compute ONCE into that cache -- every later
+#                      run of the config reuses it (never trains unnormalized).
 #   --no-smoke         skip the 100-step smoke test
 #   --smoke-only       run only the smoke test, then exit
 #   --resume           pass --resume to openpi (continue from last ckpt)
 #   --overwrite        pass --overwrite to openpi (wipe ckpt dir)
+#   --project NAME     wandb project to report to (default: the config's
+#                      project_name). Use with --push-repo to keep a throwaway /
+#                      shakedown run out of the real project and model repo.
 #   --push-repo REPO   HF model repo to stream checkpoints to
 #                      (default: config policy_metadata.hf_repo; empty disables push)
 #   --no-push          disable the HF push watcher even if the config sets hf_repo
@@ -57,18 +62,18 @@ set -euo pipefail
 # --- CPU thread caps (CRITICAL for multi-worker dataloading) ----------------
 # openpi training is a single JAX process with ONE DataLoader feeding all GPUs
 # via `num_workers` worker PROCESSES. Each worker decodes video + runs
-# numpy/BLAS. On a multi-GPU host num_workers is large; left uncapped, every
-# worker's BLAS/OMP grabs ALL cores, so the workers oversubscribe the CPU and
-# thrash -- a very slow dataloader init and periodic multi-minute stalls every
-# `num_workers` steps (the prefetch buffer drains faster than the thrashing
-# workers can refill). Pinning one math thread per worker restores true N-way
-# parallel decode. JAX/XLA is unaffected (it uses its own threadpool).
+# numpy/BLAS. Left uncapped, every worker's BLAS/OMP grabs ALL cores, so the
+# workers oversubscribe the CPU and thrash -- a very slow dataloader init and
+# periodic multi-minute stalls every `num_workers` steps (the prefetch buffer
+# drains faster than the thrashing workers can refill). This bites hardest when
+# several one-card runs share a host. Pinning one math thread per worker restores
+# true N-way parallel decode. JAX/XLA is unaffected (it uses its own threadpool).
 : "${OMP_NUM_THREADS:=1}"; export OMP_NUM_THREADS
 : "${MKL_NUM_THREADS:=1}"; export MKL_NUM_THREADS
 : "${OPENBLAS_NUM_THREADS:=1}"; export OPENBLAS_NUM_THREADS
 : "${NUMEXPR_NUM_THREADS:=1}"; export NUMEXPR_NUM_THREADS
 
-CONFIG=""; EXP=""; STEPS=""; BATCH=""; KEEP_PERIOD=""
+CONFIG=""; EXP=""; STEPS=""; BATCH=""; KEEP_PERIOD=""; PROJECT=""
 NORM_STATS=0; SMOKE=1; SMOKE_ONLY=0; RESUME=0; OVERWRITE=0
 PUSH_REPO=""; NO_PUSH=0; PUSH_PRIVATE=""; POLL_INTERVAL=30
 
@@ -76,6 +81,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --config) CONFIG="$2"; shift 2;;
     --exp) EXP="$2"; shift 2;;
+    --project) PROJECT="$2"; shift 2;;
     --steps) STEPS="$2"; shift 2;;
     --batch) BATCH="$2"; shift 2;;
     --keep-period) KEEP_PERIOD="$2"; shift 2;;
@@ -146,9 +152,13 @@ fi
 # --- run layout: one self-contained, gitignored folder per run -------------
 RUN_DIR="$REPO_ROOT/outputs/sft_runs/$EXP"
 CKPT_BASE="$RUN_DIR/checkpoints"
-ASSETS_BASE="$RUN_DIR/assets"
 LOG_DIR="$RUN_DIR/logs"
 mkdir -p "$LOG_DIR"
+# Norm-stats are a property of the (config, dataset) pair -- not of a run -- and
+# are identical however often they are recomputed. So they live in ONE cache
+# shared by every run of a config: computed once, reused by every later run
+# (each scaling point / repeat would otherwise burn hours recomputing constants).
+NORM_CACHE="$REPO_ROOT/outputs/norm_stats"
 # pi05_base (and other GCS) warm-start downloads cached here, shared across runs.
 export OPENPI_DATA_HOME="${OPENPI_DATA_HOME:-$REPO_ROOT/outputs/openpi_cache}"
 mkdir -p "$OPENPI_DATA_HOME"
@@ -172,28 +182,63 @@ echo "[run_sft] openpi_root=$OPENPI_ROOT data_home=$OPENPI_DATA_HOME"
 [[ -n "$PUSH_REPO" ]] && echo "[run_sft] push -> $PUSH_REPO (private=$PUSH_PRIVATE)" \
                       || echo "[run_sft] push disabled"
 
-# Norm-stats resolution (unless --norm-stats forces a fresh compute):
-#   1. committed norm_stats/<config>/<repo_id>/norm_stats.json  -> use it (turnkey); or
-#   2. no committed stats -> COMPUTE ON THE FLY into the run's assets dir, then train.
-# This lets a family ship CONFIG-ONLY (no baked stats): the first run computes them.
-# openpi's compute_norm_stats is deterministic over the full dataset, so on-the-fly
-# yields exactly what a baked file would hold. Never trains silently unnormalized.
-if [[ "$NORM_STATS" == "0" ]]; then
-  if [[ -d "$REPO_ROOT/norm_stats/$CONFIG" ]]; then
-    ASSETS_BASE="$REPO_ROOT/norm_stats"
-    echo "[run_sft] using committed norm-stats: $ASSETS_BASE/$CONFIG"
-  else
-    echo "[run_sft] no committed norm-stats for $CONFIG -> computing on the fly into $ASSETS_BASE"
-    NORM_STATS=1   # fall through to the compute block below (writes RUN_DIR/assets; training reads it)
-  fi
+# --- dataset: ensure it is fully on local disk BEFORE anything reads it -----
+# First run of a family in a workspace downloads it (patiently: the Hub
+# rate-limits these many-small-file datasets hard, and a throttled multi-hour
+# fetch is still a success -- see fetch_dataset.py); every later run finds the
+# completion marker and starts instantly with zero Hub traffic. This is what
+# rules out the mid-training stall-on-Hub-fetch failure mode.
+echo "[run_sft] ensuring dataset is local ..."
+python "$HERE/fetch_dataset.py" --config-name "$CONFIG" --dest-root "$HF_LEROBOT_HOME" 2>&1 | tee "$LOG_DIR/fetch_dataset.log"
+FETCH_RC=${PIPESTATUS[0]}
+if [[ "$FETCH_RC" != "0" ]]; then
+  echo "ERROR: dataset fetch failed (rc=$FETCH_RC); not starting training." >&2
+  exit 1
 fi
 
+# Norm-stats resolution (unless --norm-stats forces a fresh compute):
+#   1. committed norm_stats/<config>/  -> use as-is (turnkey, no compute); else
+#   2. cached outputs/norm_stats/<config>/ left by an earlier run -> reuse; else
+#   3. compute ONCE into that cache, so every later run of this config reuses it.
+# --norm-stats forces (3) even when 1/2 exist, refreshing the cache.
+# This lets a family ship CONFIG-ONLY (no baked stats): the first run computes them
+# and every run after that starts instantly. openpi's compute_norm_stats is
+# deterministic over the full dataset, so a computed file equals a baked one.
+# Presence is tested by finding an actual norm_stats.json, not just a directory --
+# an empty dir would otherwise train silently unnormalized.
+if [[ "$NORM_STATS" == "1" ]]; then
+  ASSETS_BASE="$NORM_CACHE"
+  echo "[run_sft] --norm-stats: recomputing into $ASSETS_BASE/$CONFIG (refreshes the cache)"
+elif [[ -n "$(find "$REPO_ROOT/norm_stats/$CONFIG" -name norm_stats.json 2>/dev/null | head -1)" ]]; then
+  ASSETS_BASE="$REPO_ROOT/norm_stats"
+  echo "[run_sft] using committed norm-stats: $ASSETS_BASE/$CONFIG"
+elif [[ -n "$(find "$NORM_CACHE/$CONFIG" -name norm_stats.json 2>/dev/null | head -1)" ]]; then
+  ASSETS_BASE="$NORM_CACHE"
+  echo "[run_sft] reusing cached norm-stats: $ASSETS_BASE/$CONFIG"
+else
+  ASSETS_BASE="$NORM_CACHE"
+  echo "[run_sft] no norm-stats for $CONFIG -> computing once into $ASSETS_BASE/$CONFIG (later runs reuse it)"
+  NORM_STATS=1
+fi
+mkdir -p "$ASSETS_BASE"
+
 BASE_ARGS=( --assets-base-dir "$ASSETS_BASE" --checkpoint-base-dir "$CKPT_BASE" )
+# Applies to the smoke run and the full run alike, so a throwaway run can be kept
+# out of the wandb project the real runs report to.
+[[ -n "$PROJECT" ]] && BASE_ARGS+=( --project-name "$PROJECT" )
 # norm-stats writes into the SAME assets dir training reads (--assets-base-dir),
 # else training silently runs unnormalized (openpi swallows missing norm stats).
 # openpi's compute_norm_stats is tyro.cli(main) -> config name is the FLAG
 # --config-name (not positional, unlike train.py).
 CMD_NORM=( python "$HERE/compute_norm_stats.py" --config-name "$CONFIG" --assets-base-dir "$ASSETS_BASE" )
+# Latest-run-wins locally too: leftover checkpoints from a previous run of
+# this exp would otherwise make openpi refuse to start. --resume continues
+# them; anything else replaces them.
+if [[ "$RESUME" == "0" && "$OVERWRITE" == "0" && -d "$CKPT_DIR" ]]; then
+  echo "[run_sft] existing checkpoints found for $EXP and no --resume -> latest-run-wins: overwriting"
+  OVERWRITE=1
+fi
+
 TRAIN_ARGS=( "$CONFIG" --exp-name "$EXP" "${BASE_ARGS[@]}" )
 [[ -n "$STEPS" ]] && TRAIN_ARGS+=( --num-train-steps "$STEPS" )
 [[ -n "$BATCH" ]] && TRAIN_ARGS+=( --batch-size "$BATCH" )
@@ -215,7 +260,11 @@ fi
 if [[ "$SMOKE" == "1" || "$SMOKE_ONLY" == "1" ]]; then
   echo "[run_sft] smoke test (100 steps) ..."
   SMOKE_EXP="${EXP}_smoke"
-  python "$HERE/train.py" "$CONFIG" --exp-name "$SMOKE_EXP" "${BASE_ARGS[@]}" \
+  # The smoke's job is to validate memory/throughput for the run that follows,
+  # so it must honor the same --batch override the full run will use.
+  SMOKE_ARGS=( "$CONFIG" --exp-name "$SMOKE_EXP" "${BASE_ARGS[@]}" )
+  [[ -n "$BATCH" ]] && SMOKE_ARGS+=( --batch-size "$BATCH" )
+  python "$HERE/train.py" "${SMOKE_ARGS[@]}" \
     --num-train-steps 100 --overwrite 2>&1 | tee "$LOG_DIR/smoke.log"
   echo "[run_sft] smoke OK; removing smoke ckpt dir"
   rm -rf "$CKPT_BASE/$CONFIG/$SMOKE_EXP" || true
@@ -233,6 +282,12 @@ if [[ -n "$PUSH_REPO" ]]; then
   WATCH_ARGS=( --ckpt-dir "$CKPT_DIR" --repo "$PUSH_REPO"
                --num-train-steps "$WSTEPS" --poll-interval "$POLL_INTERVAL" )
   [[ "$PUSH_PRIVATE" == "1" ]] && WATCH_ARGS+=( --private )
+  # Latest-run-wins: a fresh (non --resume) run first clears the repo's old
+  # checkpoint folders. Without this a re-run is SILENTLY dropped: its files
+  # have the same names/sizes as the old run's, so the already-pushed check
+  # would keep the stale weights. --resume continues the same logical run, so
+  # its existing uploads are kept.
+  [[ "$RESUME" == "0" ]] && WATCH_ARGS+=( --fresh )
   echo "[run_sft] starting HF-push watcher -> $PUSH_REPO (num_train_steps=$WSTEPS)"
   python "$HERE/hf_push_watcher.py" "${WATCH_ARGS[@]}" 2>&1 | tee "$LOG_DIR/watcher.log" &
   WATCHER_PID=$!

@@ -38,6 +38,7 @@ from _hf_push_common import (  # noqa: E402
     is_pushed_complete,
     push_step,
     remote_label,
+    reset_remote_steps,
 )
 
 
@@ -49,6 +50,11 @@ def main() -> None:
                     help="Used to relabel the 0-indexed final step and to know when to exit.")
     ap.add_argument("--poll-interval", type=int, default=30, help="Seconds between scans.")
     ap.add_argument("--private", action="store_true", help="Create the repo private (default public).")
+    ap.add_argument("--fresh", action="store_true",
+                    help="Delete the repo's existing checkpoint folders first (latest-run-wins). "
+                         "Required for re-runs: a re-run's checkpoints have identical file "
+                         "names/sizes to the old ones, so without this the dedup check would "
+                         "silently keep the OLD run's weights on HF.")
     args = ap.parse_args()
 
     token = os.environ.get("HF_TOKEN")
@@ -56,6 +62,9 @@ def main() -> None:
         sys.exit("ERROR: HF_TOKEN not set")
     api = HfApi(token=token)
     api.create_repo(args.repo, repo_type="model", exist_ok=True, private=args.private)
+    if args.fresh:
+        n = reset_remote_steps(api, args.repo)
+        print(f"[watcher] fresh run: removed {n} stale checkpoint folder(s) from {args.repo}", flush=True)
 
     final_label = remote_label(args.num_train_steps - 1, args.num_train_steps)
     print(f"[watcher] {args.ckpt_dir} -> {args.repo}  (poll {args.poll_interval}s, "

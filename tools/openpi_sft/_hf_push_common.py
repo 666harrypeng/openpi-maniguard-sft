@@ -30,6 +30,35 @@ from huggingface_hub import HfApi
 IGNORE_PATTERNS = ["train_state/**", "train_state"]
 
 
+def reset_remote_steps(api: HfApi, repo: str) -> int:
+    """Delete every numeric checkpoint folder in the repo (latest-run-wins).
+
+    A re-run of the same config produces checkpoints whose file NAMES AND SIZES
+    are identical to the previous run's (same architecture; only the weight
+    bytes differ), so the is-already-pushed fingerprint cannot tell them apart
+    -- without a reset, a re-run would silently keep the OLD run's weights on
+    HF. Wiping the step folders up front makes the repo mean exactly one thing:
+    the latest run of this config. Non-checkpoint files (README/model card) are
+    left untouched. Returns the number of folders deleted.
+    """
+    from huggingface_hub import CommitOperationDelete
+
+    try:
+        entries = api.list_repo_tree(repo, repo_type="model", recursive=False)
+        stale = sorted((e.path for e in entries if e.path.isdigit()), key=int)
+    except Exception:
+        return 0  # repo just created / empty
+    if not stale:
+        return 0
+    api.create_commit(
+        repo_id=repo,
+        repo_type="model",
+        operations=[CommitOperationDelete(path_in_repo=f"{p}/", is_folder=True) for p in stale],
+        commit_message=f"reset checkpoints for new run (removed: {', '.join(stale)})",
+    )
+    return len(stale)
+
+
 def remote_label(step: int, num_train_steps: int) -> str:
     """Map a local step dir name to its HF directory name.
 

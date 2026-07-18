@@ -41,12 +41,19 @@ import maniguard.openpi_sft  # noqa: E402,F401  -- registers TrainConfigs on imp
 # Everything else -- notably --config-name VALUE -- is passed through unchanged.
 _argv = sys.argv[1:]
 _assets_base_dir = None
+_num_workers = None
 _config_name = None
 _kept = []
 _i = 0
 while _i < len(_argv):
     if _argv[_i] == "--assets-base-dir":
         _assets_base_dir = _argv[_i + 1]
+        _i += 2
+    elif _argv[_i] == "--num-workers":
+        # The config's num_workers is sized for training. The stats pass uses a
+        # plain fork-context DataLoader that is prone to deadlocking at high
+        # worker counts, so it needs an independent (lower) setting.
+        _num_workers = int(_argv[_i + 1])
         _i += 2
     elif _argv[_i] == "--config-name":
         _config_name = _argv[_i + 1]
@@ -57,14 +64,17 @@ while _i < len(_argv):
         _i += 1
 sys.argv = [sys.argv[0], *_kept]
 
-if _assets_base_dir is not None:
+if _assets_base_dir is not None or _num_workers is not None:
     if _config_name is None:
-        raise SystemExit("compute_norm_stats: --assets-base-dir requires --config-name")
+        raise SystemExit("compute_norm_stats: --assets-base-dir/--num-workers require --config-name")
     from openpi.training.config import _CONFIGS_DICT
 
-    _CONFIGS_DICT[_config_name] = dataclasses.replace(
-        _CONFIGS_DICT[_config_name], assets_base_dir=_assets_base_dir
-    )
+    _overrides = {}
+    if _assets_base_dir is not None:
+        _overrides["assets_base_dir"] = _assets_base_dir
+    if _num_workers is not None:
+        _overrides["num_workers"] = _num_workers
+    _CONFIGS_DICT[_config_name] = dataclasses.replace(_CONFIGS_DICT[_config_name], **_overrides)
 
 OPENPI_ROOT = os.environ.get("OPENPI_ROOT")
 if not OPENPI_ROOT:
