@@ -17,10 +17,11 @@ Six configs (one per family — clutter, cabinet, stack, jar, lid, dusty):
 - `pi05-base_datagen_v1_dusty_joint_2cam_lora`
 
 Config definitions live in `maniguard/openpi_sft/train_configs.py`; each config's dataset + task are
-in the [SFT.md](SFT.md) table. Norm-stats: a family with stats committed under `norm_stats/`
-starts instantly; a family shipped config-only has them computed once before its first training
-and cached in `outputs/norm_stats/` for every later run (a one-time CPU step, no manual action).
-Either way you just pass `--config`.
+in the [SFT.md](SFT.md) table. **All six families ship with their norm-stats committed under
+`norm_stats/<config>/<repo_id>/`**, read automatically — every family starts training instantly,
+no stats compute step. (The fallback for a family added without committed stats: `run_sft.sh`
+computes them once into `outputs/norm_stats/` and reuses them for every later run.) You just pass
+`--config`.
 
 ## Running SFT
 

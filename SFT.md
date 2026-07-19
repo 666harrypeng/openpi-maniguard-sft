@@ -46,9 +46,9 @@ downloads it from the Hub with resume + backoff; later runs find the completion 
 instantly), then runs a 100-step smoke test, then full training, streaming each checkpoint to the
 config's model repo (`IDEAS-Lab-Northwestern/pi05-base-datagen-v1-<family>-joint-2cam-lora`) as
 it finalizes. Every config trains 2 epochs and pushes exactly 4 checkpoints (one per half epoch);
-relaunching without `--resume` replaces the repo's previous checkpoints (latest-run-wins). Norm-stats: a family with committed `norm_stats/` is read automatically (turnkey, no
-compute); a family shipped config-only has them computed once before its first training and
-cached in `outputs/norm_stats/` for every later run. Run artifacts
+relaunching without `--resume` replaces the repo's previous checkpoints (latest-run-wins).
+Norm-stats: all six families ship theirs committed under `norm_stats/`, read automatically —
+no compute step, every family is turnkey. Run artifacts
 (checkpoints, logs) go under `outputs/sft_runs/<exp>/`.
 
 Only `--config` is required; `--exp`, the push repo, and run length default from the config.
