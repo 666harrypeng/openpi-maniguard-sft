@@ -34,6 +34,9 @@
 #   --exp NAME         experiment/run name (default: config policy_metadata.default_exp)
 #   --steps N          num_train_steps override
 #   --batch N          batch_size override
+#   --num-workers N    dataloader worker count override (pure perf knob; lower it
+#                      on hosts where spawning many workers is slow, e.g. a venv
+#                      on a network filesystem)
 #   --keep-period N    keep_period override (checkpoint cadence)
 #   --norm-stats       force a fresh compute_norm_stats (refreshes the shared cache).
 #                      DEFAULT (no flag): committed norm_stats/<config>/ if present,
@@ -73,7 +76,7 @@ set -euo pipefail
 : "${OPENBLAS_NUM_THREADS:=1}"; export OPENBLAS_NUM_THREADS
 : "${NUMEXPR_NUM_THREADS:=1}"; export NUMEXPR_NUM_THREADS
 
-CONFIG=""; EXP=""; STEPS=""; BATCH=""; KEEP_PERIOD=""; PROJECT=""
+CONFIG=""; EXP=""; STEPS=""; BATCH=""; KEEP_PERIOD=""; PROJECT=""; NUM_WORKERS=""
 NORM_STATS=0; SMOKE=1; SMOKE_ONLY=0; RESUME=0; OVERWRITE=0
 PUSH_REPO=""; NO_PUSH=0; PUSH_PRIVATE=""; POLL_INTERVAL=30
 
@@ -84,6 +87,7 @@ while [[ $# -gt 0 ]]; do
     --project) PROJECT="$2"; shift 2;;
     --steps) STEPS="$2"; shift 2;;
     --batch) BATCH="$2"; shift 2;;
+    --num-workers) NUM_WORKERS="$2"; shift 2;;
     --keep-period) KEEP_PERIOD="$2"; shift 2;;
     --norm-stats) NORM_STATS=1; shift;;
     --no-smoke) SMOKE=0; shift;;
@@ -242,6 +246,7 @@ fi
 TRAIN_ARGS=( "$CONFIG" --exp-name "$EXP" "${BASE_ARGS[@]}" )
 [[ -n "$STEPS" ]] && TRAIN_ARGS+=( --num-train-steps "$STEPS" )
 [[ -n "$BATCH" ]] && TRAIN_ARGS+=( --batch-size "$BATCH" )
+[[ -n "$NUM_WORKERS" ]] && TRAIN_ARGS+=( --num-workers "$NUM_WORKERS" )
 [[ -n "$KEEP_PERIOD" ]] && TRAIN_ARGS+=( --keep-period "$KEEP_PERIOD" )
 [[ "$RESUME" == "1" ]] && TRAIN_ARGS+=( --resume )
 [[ "$OVERWRITE" == "1" ]] && TRAIN_ARGS+=( --overwrite )
@@ -264,6 +269,7 @@ if [[ "$SMOKE" == "1" || "$SMOKE_ONLY" == "1" ]]; then
   # so it must honor the same --batch override the full run will use.
   SMOKE_ARGS=( "$CONFIG" --exp-name "$SMOKE_EXP" "${BASE_ARGS[@]}" )
   [[ -n "$BATCH" ]] && SMOKE_ARGS+=( --batch-size "$BATCH" )
+  [[ -n "$NUM_WORKERS" ]] && SMOKE_ARGS+=( --num-workers "$NUM_WORKERS" )
   python "$HERE/train.py" "${SMOKE_ARGS[@]}" \
     --num-train-steps 100 --overwrite 2>&1 | tee "$LOG_DIR/smoke.log"
   echo "[run_sft] smoke OK; removing smoke ckpt dir"
