@@ -1,15 +1,17 @@
-"""ManiGuard pi0.5 LoRA SFT TrainConfigs, registered into pristine openpi.
+"""ManiGuard openpi LoRA SFT TrainConfigs (pi0.5 AND pi0), registered into pristine openpi.
 
-Six task families (clutter, cabinet, stack, jar, lid, dusty), each a fully inline
-``TrainConfig`` (model + freeze_filter written out in full, no shared builders)
-so the whole recipe is readable at a glance. ``register()`` inserts them into
-openpi's ``_CONFIGS_DICT`` at import time, so openpi's ``scripts/train.py`` /
+Six task families (clutter, cabinet, stack, jar, lid, dusty) x two model
+generations: ``pi05-base_*`` (warm-start pi05_base) and ``pi0-base_*``
+(warm-start pi0_base). Each is a fully inline ``TrainConfig`` (model +
+freeze_filter written out in full, no shared builders) so the whole recipe is
+readable at a glance. ``register()`` inserts them into openpi's
+``_CONFIGS_DICT`` at import time, so openpi's ``scripts/train.py`` /
 ``scripts/compute_norm_stats.py`` resolve them by name when launched via the
 wrappers in ``tools/openpi_sft/``; openpi itself is never edited.
 
-JointController pipeline: all six configs use ``Sim2CamLiberoDataConfig`` with
+JointController pipeline: all configs use ``Sim2CamLiberoDataConfig`` with
 ``use_delta_joint_actions=True`` (absolute-joint datasets; 7 arm joints ->
-per-step delta, gripper absolute) and warm-start from ``pi05_base``.
+per-step delta, gripper absolute).
 
 Scale: **one run owns all 8 GPUs** (pure data parallelism) -- GLOBAL
 ``batch_size=256`` = 32 samples/card, the measured per-card GPU-saturation
@@ -38,6 +40,7 @@ from openpi.training.config import DataConfig, TrainConfig
 from maniguard.openpi_sft.data_configs import Sim2CamLiberoDataConfig
 
 _PI05_BASE = "gs://openpi-assets/checkpoints/pi05_base/params"
+_PI0_BASE = "gs://openpi-assets/checkpoints/pi0_base/params"
 
 
 def _build_configs() -> list[TrainConfig]:
@@ -410,6 +413,274 @@ def _build_configs() -> list[TrainConfig]:
                 pi05=True,
                 action_dim=32,
                 action_horizon=16,
+                paligemma_variant="gemma_2b_lora",
+                action_expert_variant="gemma_300m_lora",
+            ).get_freeze_filter(),
+            ema_decay=None,
+        ),
+        # ================= pi0 (base pi0, NOT pi0.5) -- same six families =================
+        # Identical data pipeline + 8-GPU scale as the pi05 blocks above (same
+        # Sim2CamLiberoDataConfig, delta-joint actions, external_cam, steps, LR,
+        # batch, checkpoint cadence). The diffs are exactly the model generation:
+        #   * warm-start pi0_base (not pi05_base);
+        #   * Pi0Config default pi05=False -> continuous state input
+        #     (discrete_state_input auto-resolves False, max_token_len 48);
+        #   * action_horizon=50 (pi0's native chunk; the pi05 blocks use 16).
+        # Norm stats are computed FRESH under each pi0 config name: the stats pass
+        # chunks actions by action_horizon, so the pi05 stats are NOT reused.
+        TrainConfig(
+            name="pi0-base_datagen_v1_clutter_joint_2cam_lora",
+            project_name="maniguard-sft",
+            policy_metadata={
+                "hf_repo": "IDEAS-Lab-Northwestern/pi0-base-datagen-v1-clutter-joint-2cam-lora",
+                "hf_private": False,
+                "default_exp": "datagen_v1_clutter_joint_2cam",
+            },
+            model=pi0_config.Pi0Config(
+                action_dim=32,
+                action_horizon=50,
+                paligemma_variant="gemma_2b_lora",
+                action_expert_variant="gemma_300m_lora",
+                dtype="bfloat16",
+            ),
+            data=Sim2CamLiberoDataConfig(
+                repo_id="IDEAS-Lab-Northwestern/datagen-clutter-v1-joint-5cam",
+                base_config=DataConfig(prompt_from_task=True),
+                use_delta_joint_actions=True,
+                external_cam="left",
+            ),
+            weight_loader=weight_loaders.CheckpointWeightLoader(_PI0_BASE),
+            lr_schedule=_optimizer.CosineDecaySchedule(
+                warmup_steps=200,
+                peak_lr=7e-5,
+                decay_steps=7_100,
+                decay_lr=7e-6,
+            ),
+            num_train_steps=7_100,
+            batch_size=256,
+            num_workers=48,
+            log_interval=100,
+            fsdp_devices=1,
+            save_interval=1_775,
+            keep_period=1_775,
+            freeze_filter=pi0_config.Pi0Config(
+                action_dim=32,
+                action_horizon=50,
+                paligemma_variant="gemma_2b_lora",
+                action_expert_variant="gemma_300m_lora",
+            ).get_freeze_filter(),
+            ema_decay=None,
+        ),
+        TrainConfig(
+            name="pi0-base_datagen_v1_cabinet_joint_2cam_lora",
+            project_name="maniguard-sft",
+            policy_metadata={
+                "hf_repo": "IDEAS-Lab-Northwestern/pi0-base-datagen-v1-cabinet-joint-2cam-lora",
+                "hf_private": False,
+                "default_exp": "datagen_v1_cabinet_joint_2cam",
+            },
+            model=pi0_config.Pi0Config(
+                action_dim=32,
+                action_horizon=50,
+                paligemma_variant="gemma_2b_lora",
+                action_expert_variant="gemma_300m_lora",
+                dtype="bfloat16",
+            ),
+            data=Sim2CamLiberoDataConfig(
+                repo_id="IDEAS-Lab-Northwestern/datagen-cabinet-v1-joint-5cam",
+                base_config=DataConfig(prompt_from_task=True),
+                use_delta_joint_actions=True,
+                external_cam="left",
+            ),
+            weight_loader=weight_loaders.CheckpointWeightLoader(_PI0_BASE),
+            lr_schedule=_optimizer.CosineDecaySchedule(
+                warmup_steps=1_000,
+                peak_lr=7e-5,
+                decay_steps=32_650,
+                decay_lr=7e-6,
+            ),
+            num_train_steps=32_650,
+            batch_size=256,
+            num_workers=48,
+            log_interval=100,
+            fsdp_devices=1,
+            save_interval=8_163,
+            keep_period=8_163,
+            freeze_filter=pi0_config.Pi0Config(
+                action_dim=32,
+                action_horizon=50,
+                paligemma_variant="gemma_2b_lora",
+                action_expert_variant="gemma_300m_lora",
+            ).get_freeze_filter(),
+            ema_decay=None,
+        ),
+        TrainConfig(
+            name="pi0-base_datagen_v1_stack_joint_2cam_lora",
+            project_name="maniguard-sft",
+            policy_metadata={
+                "hf_repo": "IDEAS-Lab-Northwestern/pi0-base-datagen-v1-stack-joint-2cam-lora",
+                "hf_private": False,
+                "default_exp": "datagen_v1_stack_joint_2cam",
+            },
+            model=pi0_config.Pi0Config(
+                action_dim=32,
+                action_horizon=50,
+                paligemma_variant="gemma_2b_lora",
+                action_expert_variant="gemma_300m_lora",
+                dtype="bfloat16",
+            ),
+            data=Sim2CamLiberoDataConfig(
+                repo_id="IDEAS-Lab-Northwestern/datagen-stack-v1-joint-5cam",
+                base_config=DataConfig(prompt_from_task=True),
+                use_delta_joint_actions=True,
+                external_cam="left",
+            ),
+            weight_loader=weight_loaders.CheckpointWeightLoader(_PI0_BASE),
+            lr_schedule=_optimizer.CosineDecaySchedule(
+                warmup_steps=650,
+                peak_lr=7e-5,
+                decay_steps=20_750,
+                decay_lr=7e-6,
+            ),
+            num_train_steps=20_750,
+            batch_size=256,
+            num_workers=48,
+            log_interval=100,
+            fsdp_devices=1,
+            save_interval=5_188,
+            keep_period=5_188,
+            freeze_filter=pi0_config.Pi0Config(
+                action_dim=32,
+                action_horizon=50,
+                paligemma_variant="gemma_2b_lora",
+                action_expert_variant="gemma_300m_lora",
+            ).get_freeze_filter(),
+            ema_decay=None,
+        ),
+        TrainConfig(
+            name="pi0-base_datagen_v1_jar_joint_2cam_lora",
+            project_name="maniguard-sft",
+            policy_metadata={
+                "hf_repo": "IDEAS-Lab-Northwestern/pi0-base-datagen-v1-jar-joint-2cam-lora",
+                "hf_private": False,
+                "default_exp": "datagen_v1_jar_joint_2cam",
+            },
+            model=pi0_config.Pi0Config(
+                action_dim=32,
+                action_horizon=50,
+                paligemma_variant="gemma_2b_lora",
+                action_expert_variant="gemma_300m_lora",
+                dtype="bfloat16",
+            ),
+            data=Sim2CamLiberoDataConfig(
+                repo_id="IDEAS-Lab-Northwestern/datagen-jar-v1-joint-5cam",
+                base_config=DataConfig(prompt_from_task=True),
+                use_delta_joint_actions=True,
+                external_cam="left",
+            ),
+            weight_loader=weight_loaders.CheckpointWeightLoader(_PI0_BASE),
+            lr_schedule=_optimizer.CosineDecaySchedule(
+                warmup_steps=250,
+                peak_lr=7e-5,
+                decay_steps=7_400,
+                decay_lr=7e-6,
+            ),
+            num_train_steps=7_400,
+            batch_size=256,
+            num_workers=48,
+            log_interval=100,
+            fsdp_devices=1,
+            save_interval=1_850,
+            keep_period=1_850,
+            freeze_filter=pi0_config.Pi0Config(
+                action_dim=32,
+                action_horizon=50,
+                paligemma_variant="gemma_2b_lora",
+                action_expert_variant="gemma_300m_lora",
+            ).get_freeze_filter(),
+            ema_decay=None,
+        ),
+        TrainConfig(
+            name="pi0-base_datagen_v1_lid_joint_2cam_lora",
+            project_name="maniguard-sft",
+            policy_metadata={
+                "hf_repo": "IDEAS-Lab-Northwestern/pi0-base-datagen-v1-lid-joint-2cam-lora",
+                "hf_private": False,
+                "default_exp": "datagen_v1_lid_joint_2cam",
+            },
+            model=pi0_config.Pi0Config(
+                action_dim=32,
+                action_horizon=50,
+                paligemma_variant="gemma_2b_lora",
+                action_expert_variant="gemma_300m_lora",
+                dtype="bfloat16",
+            ),
+            data=Sim2CamLiberoDataConfig(
+                repo_id="IDEAS-Lab-Northwestern/datagen-lid-v1-joint-5cam",
+                base_config=DataConfig(prompt_from_task=True),
+                use_delta_joint_actions=True,
+                external_cam="left",
+            ),
+            weight_loader=weight_loaders.CheckpointWeightLoader(_PI0_BASE),
+            lr_schedule=_optimizer.CosineDecaySchedule(
+                warmup_steps=250,
+                peak_lr=7e-5,
+                decay_steps=8_250,
+                decay_lr=7e-6,
+            ),
+            num_train_steps=8_250,
+            batch_size=256,
+            num_workers=48,
+            log_interval=100,
+            fsdp_devices=1,
+            save_interval=2_063,
+            keep_period=2_063,
+            freeze_filter=pi0_config.Pi0Config(
+                action_dim=32,
+                action_horizon=50,
+                paligemma_variant="gemma_2b_lora",
+                action_expert_variant="gemma_300m_lora",
+            ).get_freeze_filter(),
+            ema_decay=None,
+        ),
+        TrainConfig(
+            name="pi0-base_datagen_v1_dusty_joint_2cam_lora",
+            project_name="maniguard-sft",
+            policy_metadata={
+                "hf_repo": "IDEAS-Lab-Northwestern/pi0-base-datagen-v1-dusty-joint-2cam-lora",
+                "hf_private": False,
+                "default_exp": "datagen_v1_dusty_joint_2cam",
+            },
+            model=pi0_config.Pi0Config(
+                action_dim=32,
+                action_horizon=50,
+                paligemma_variant="gemma_2b_lora",
+                action_expert_variant="gemma_300m_lora",
+                dtype="bfloat16",
+            ),
+            data=Sim2CamLiberoDataConfig(
+                repo_id="IDEAS-Lab-Northwestern/datagen-dusty-v1-joint-5cam",
+                base_config=DataConfig(prompt_from_task=True),
+                use_delta_joint_actions=True,
+                external_cam="left",
+            ),
+            weight_loader=weight_loaders.CheckpointWeightLoader(_PI0_BASE),
+            lr_schedule=_optimizer.CosineDecaySchedule(
+                warmup_steps=450,
+                peak_lr=7e-5,
+                decay_steps=14_700,
+                decay_lr=7e-6,
+            ),
+            num_train_steps=14_700,
+            batch_size=256,
+            num_workers=48,
+            log_interval=100,
+            fsdp_devices=1,
+            save_interval=3_675,
+            keep_period=3_675,
+            freeze_filter=pi0_config.Pi0Config(
+                action_dim=32,
+                action_horizon=50,
                 paligemma_variant="gemma_2b_lora",
                 action_expert_variant="gemma_300m_lora",
             ).get_freeze_filter(),
