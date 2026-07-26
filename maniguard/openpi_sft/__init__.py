@@ -13,6 +13,7 @@ only contribute the task-specific config.
 """
 
 from maniguard.openpi_sft._augmax_patch import apply as _apply_augmax_guard
+from maniguard.openpi_sft._episode_subset_patch import apply as _apply_episode_subset
 from maniguard.openpi_sft._lerobot_video_patch import apply as _apply_pyav_backend
 from maniguard.openpi_sft._vram_probe import apply as _apply_vram_probe
 from maniguard.openpi_sft.train_configs import register
@@ -26,4 +27,8 @@ _apply_pyav_backend()
 # Print VRAM at the batch / model+optimizer / first-step milestones, so the
 # memory cost of batch_size is visible in the run log. See _vram_probe.
 _apply_vram_probe()
+# Per-base-task episode subsetting for the data-scaling ablation configs
+# (episode_fraction on Sim2CamLiberoDataConfig); no-op for fraction-less
+# configs. See _episode_subset_patch.
+_apply_episode_subset()
 register()
