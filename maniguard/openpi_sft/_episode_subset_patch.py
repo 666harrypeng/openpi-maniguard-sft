@@ -60,9 +60,43 @@ def select_episode_subset(episodes_meta: dict, fraction: float) -> list[int]:
     return selected
 
 
+def _fix_lerobot_filtered_query_indices() -> None:
+    """Fix lerobot v2.1's ``episodes=`` filter for non-prefix selections.
+
+    Upstream bug: with ``episodes=[...]``, ``episode_data_index["from"/"to"]``
+    are POSITIONAL arrays over the selected episodes (size = len(selected)),
+    but ``__getitem__`` passes the ORIGINAL ``episode_index`` stored in the
+    parquet row into ``_get_query_indices`` — correct only when the selection
+    is a 0-based prefix. Any other selection silently reads the wrong episode
+    boundaries (wrong action-chunk windows) and raises IndexError once an
+    original index >= len(selected) is reached. Our per-40-block subsets are
+    non-contiguous, so we translate original -> position here. ``_query_videos``
+    keeps the original index (video paths are named by it) — untouched.
+    """
+    import lerobot.common.datasets.lerobot_dataset as _lrd
+
+    if getattr(_lrd.LeRobotDataset._get_query_indices, "_maniguard_subset_patch", False):
+        return
+    _orig_gqi = _lrd.LeRobotDataset._get_query_indices
+
+    def _get_query_indices(self, idx, ep_idx):
+        if self.episodes is not None:
+            pos_map = getattr(self, "_maniguard_ep_pos", None)
+            if pos_map is None:
+                pos_map = {orig: pos for pos, orig in enumerate(self.episodes)}
+                self._maniguard_ep_pos = pos_map
+            ep_idx = pos_map[ep_idx]
+        return _orig_gqi(self, idx, ep_idx)
+
+    _get_query_indices._maniguard_subset_patch = True  # type: ignore[attr-defined]
+    _lrd.LeRobotDataset._get_query_indices = _get_query_indices
+
+
 def apply() -> None:
-    """Install the wrapper around openpi's create_torch_dataset (idempotent)."""
+    """Install the wrappers (idempotent): subset creation + filtered-index fix."""
     import openpi.training.data_loader as _dl
+
+    _fix_lerobot_filtered_query_indices()
 
     if getattr(_dl.create_torch_dataset, "_maniguard_subset_patch", False):
         return
