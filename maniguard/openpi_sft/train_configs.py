@@ -982,6 +982,114 @@ def _build_configs() -> list[TrainConfig]:
             ).get_freeze_filter(),
             ema_decay=None,
         ),
+        # ====== pi0.5 PROMPT ablation (Q2: how the safety constraint is conveyed) ======
+        # clutter base only, three conditions that hold the task instruction AND the LTL
+        # automaton fixed, varying only how the constraint reaches the policy:
+        #   no_instruction    -- the constraint is never stated  = the SHIPPED clutter
+        #                        config/checkpoint above; nothing to train here.
+        #   natural_language  -- the bench's own `description` clauses, appended.
+        #   ltl               -- the bench's own LTL formulas, appended.
+        # The two blocks below differ from the 100% clutter block in NOTHING but the
+        # dataset (a prompt-rewritten variant) and the run's identity; the trajectories,
+        # videos, batch, LR, and 7,100 steps are the same, so any difference in the
+        # resulting policy is attributable to the prompt alone.
+        # The variant datasets are built by tools/ablation_prompt/build_dataset_variant.py
+        # (ManiGuard repo): meta/tasks.jsonl rewritten from
+        # configs/ablation_prompt/clutter_base_prompts.json, with data/ + videos/
+        # symlinked back to this same source dataset -- no trajectory is duplicated and
+        # the source stays read-only. Eval reads its prompts from that same table.
+        TrainConfig(
+            name="pi05-base_datagen_v1_clutter_joint_2cam_lora_promptnl",
+            project_name="maniguard-sft-promptablation-yanZ",
+            policy_metadata={
+                "hf_repo": "IDEAS-Lab-Northwestern/pi05-base-datagen-v1-clutter-joint-2cam-lora-promptnl-yanZ",
+                "hf_private": False,
+                "default_exp": "datagen_v1_clutter_joint_2cam_promptnl",
+            },
+            model=pi0_config.Pi0Config(
+                pi05=True,
+                action_dim=32,
+                action_horizon=16,
+                paligemma_variant="gemma_2b_lora",
+                action_expert_variant="gemma_300m_lora",
+                dtype="bfloat16",
+                discrete_state_input=True,
+            ),
+            data=Sim2CamLiberoDataConfig(
+                repo_id="IDEAS-Lab-Northwestern/datagen-clutter-v1-joint-5cam-promptnl",
+                base_config=DataConfig(prompt_from_task=True),
+                use_delta_joint_actions=True,
+                external_cam="left",
+            ),
+            weight_loader=weight_loaders.CheckpointWeightLoader(_PI05_BASE),
+            lr_schedule=_optimizer.CosineDecaySchedule(
+                warmup_steps=200,
+                peak_lr=7e-5,
+                decay_steps=7_100,
+                decay_lr=7e-6,
+            ),
+            num_train_steps=7_100,
+            batch_size=256,
+            num_workers=48,
+            log_interval=100,
+            fsdp_devices=1,
+            save_interval=1_775,
+            keep_period=1_775,
+            freeze_filter=pi0_config.Pi0Config(
+                pi05=True,
+                action_dim=32,
+                action_horizon=16,
+                paligemma_variant="gemma_2b_lora",
+                action_expert_variant="gemma_300m_lora",
+            ).get_freeze_filter(),
+            ema_decay=None,
+        ),
+        TrainConfig(
+            name="pi05-base_datagen_v1_clutter_joint_2cam_lora_promptltl",
+            project_name="maniguard-sft-promptablation-yanZ",
+            policy_metadata={
+                "hf_repo": "IDEAS-Lab-Northwestern/pi05-base-datagen-v1-clutter-joint-2cam-lora-promptltl-yanZ",
+                "hf_private": False,
+                "default_exp": "datagen_v1_clutter_joint_2cam_promptltl",
+            },
+            model=pi0_config.Pi0Config(
+                pi05=True,
+                action_dim=32,
+                action_horizon=16,
+                paligemma_variant="gemma_2b_lora",
+                action_expert_variant="gemma_300m_lora",
+                dtype="bfloat16",
+                discrete_state_input=True,
+            ),
+            data=Sim2CamLiberoDataConfig(
+                repo_id="IDEAS-Lab-Northwestern/datagen-clutter-v1-joint-5cam-promptltl",
+                base_config=DataConfig(prompt_from_task=True),
+                use_delta_joint_actions=True,
+                external_cam="left",
+            ),
+            weight_loader=weight_loaders.CheckpointWeightLoader(_PI05_BASE),
+            lr_schedule=_optimizer.CosineDecaySchedule(
+                warmup_steps=200,
+                peak_lr=7e-5,
+                decay_steps=7_100,
+                decay_lr=7e-6,
+            ),
+            num_train_steps=7_100,
+            batch_size=256,
+            num_workers=48,
+            log_interval=100,
+            fsdp_devices=1,
+            save_interval=1_775,
+            keep_period=1_775,
+            freeze_filter=pi0_config.Pi0Config(
+                pi05=True,
+                action_dim=32,
+                action_horizon=16,
+                paligemma_variant="gemma_2b_lora",
+                action_expert_variant="gemma_300m_lora",
+            ).get_freeze_filter(),
+            ema_decay=None,
+        ),
     ]
 
 
