@@ -186,6 +186,24 @@ echo "[run_sft] openpi_root=$OPENPI_ROOT data_home=$OPENPI_DATA_HOME"
 [[ -n "$PUSH_REPO" ]] && echo "[run_sft] push -> $PUSH_REPO (private=$PUSH_PRIVATE)" \
                       || echo "[run_sft] push disabled"
 
+# --- preflight: cv2 must be importable -------------------------------------
+# Nothing here calls OpenCV, but `opencv-python` AND `opencv-python-headless` are
+# both in the dependency tree and install into the SAME site-packages/cv2/ dir --
+# whichever lands last wins, and uv does not order them deterministically, so the
+# same lockfile can resolve either way across `uv sync` runs. The full build links
+# libGL, which a bare training container does not have. It does not fail at import
+# in the parent: it fails inside the torch dataloader's SPAWNED workers, where the
+# re-imported main module shadows stdlib `typing` with cv2/typing/ -- i.e. minutes
+# into a run, as a confusing multiprocessing traceback. Catch it in one second here.
+if ! python -c "import cv2" 2>/dev/null; then
+  echo "ERROR: 'import cv2' fails in this venv, so the dataloader's spawned workers will die." >&2
+  echo "       Cause: the full opencv-python build owns site-packages/cv2/ and needs libGL.so.1." >&2
+  echo "       Fix (no root needed; nothing here uses OpenCV, so headless is equivalent):" >&2
+  echo "         uv pip install --force-reinstall --no-deps opencv-python-headless" >&2
+  echo "       Re-run this after every 'uv sync' that flips it back." >&2
+  exit 1
+fi
+
 # --- dataset: ensure it is fully on local disk BEFORE anything reads it -----
 # First run of a family in a workspace downloads it (patiently: the Hub
 # rate-limits these many-small-file datasets hard, and a throttled multi-hour
