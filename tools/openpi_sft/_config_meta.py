@@ -10,6 +10,7 @@ Usage:
     python tools/openpi_sft/_config_meta.py <config_name> <key>
       hf_repo | hf_private | default_exp   -> from policy_metadata
       num_train_steps                       -> TrainConfig attribute
+      external_assets_dir                   -> data.assets.assets_dir (synthetic)
 """
 
 from __future__ import annotations
@@ -41,6 +42,14 @@ def main() -> None:
         sys.exit("usage: _config_meta.py <config_name> <key>")
     cfg = get_config(sys.argv[1])
     key = sys.argv[2]
+    # Synthetic key: non-empty when the config loads its normalization statistics
+    # from somewhere other than the local assets dir (openpi's DataConfigFactory
+    # does `self.assets.assets_dir or assets_dirs`). For such a config, computing
+    # norm stats locally is dead work -- the result is never read.
+    if key == "external_assets_dir":
+        assets = getattr(getattr(cfg, "data", None), "assets", None)
+        print(getattr(assets, "assets_dir", None) or "")
+        return
     meta = cfg.policy_metadata or {}
     if key in meta:
         val = meta[key]

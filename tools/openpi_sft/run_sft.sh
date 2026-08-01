@@ -210,7 +210,19 @@ fi
 # deterministic over the full dataset, so a computed file equals a baked one.
 # Presence is tested by finding an actual norm_stats.json, not just a directory --
 # an empty dir would otherwise train silently unnormalized.
-if [[ "$NORM_STATS" == "1" ]]; then
+#
+# Step (3) is skipped entirely when the config loads its statistics from ELSEWHERE
+# -- openpi's DataConfigFactory resolves them as `assets.assets_dir or assets_dirs`,
+# so a config with an explicit assets_dir (the DROID fine-tunes reuse the base
+# checkpoint's bundled DROID stats, as openpi requires) never reads a locally
+# computed file. Computing one would be dead work at best; in practice it also
+# runs a multiprocessing dataset pass that a bare container need not survive.
+EXTERNAL_ASSETS="$(meta external_assets_dir)"
+if [[ -n "$EXTERNAL_ASSETS" && "$NORM_STATS" != "1" ]]; then
+  NORM_STATS=0
+  ASSETS_BASE="$NORM_CACHE"
+  echo "[run_sft] norm-stats come from the config's assets_dir ($EXTERNAL_ASSETS) -> skipping local compute"
+elif [[ "$NORM_STATS" == "1" ]]; then
   ASSETS_BASE="$NORM_CACHE"
   echo "[run_sft] --norm-stats: recomputing into $ASSETS_BASE/$CONFIG (refreshes the cache)"
 elif [[ -n "$(find "$REPO_ROOT/norm_stats/$CONFIG" -name norm_stats.json 2>/dev/null | head -1)" ]]; then
