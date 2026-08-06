@@ -1095,37 +1095,7 @@ def _build_configs() -> list[TrainConfig]:
             ).get_freeze_filter(),
             ema_decay=None,
         ),
-        # ============ pi0.5 SIM2REAL single-task line (sim side of the real comparison) ============
-        # Each config trains on ONE base task's 60 demonstrations, matching how the real-robot
-        # checkpoints were made: real teleop collected 60 demos of a single task, so a family-level
-        # sim checkpoint (trained across all of a family's tasks) is the wrong scope to compare it
-        # with. Datasets: IDEAS-Lab-Northwestern/sim2real-<fam>-task<NNNN>-sim-joint-5cam, private,
-        # 60 episodes each, single prompt.
-        #
-        # MODEL / DATA / WARM START come from the datagen-v1 pi0.5 family blocks above, unchanged --
-        #   this is a SIM checkpoint and must read the sim camera schema and start from pi05_base
-        #   (the real line starts from pi0_droid; never cross the two).
-        # SCALE comes from the pi0 REAL-TELEOP blocks below: batch 4-32 with 50,000 steps and ONE
-        #   GPU PER RUN, not the family blocks' global batch 256. On datasets of 24-191k frames a
-        #   large batch would cut the gradient-update count by the same factor, and a sim-vs-real
-        #   difference could then be optimization rather than the transfer gap. 50,000 updates is
-        #   exactly what the real checkpoints got.
-        # BATCH is scaled with the dataset so the four runs see a COMPARABLE number of epochs
-        #   (6.3-8.4) rather than a comparable number of samples: the four tasks hold 60 demos each
-        #   but their episodes differ 8x in length, so a fixed batch would give cabinet ~1 epoch
-        #   while clutter got 8.
-        # LR interpolates between two shipped configs on peak = 2.5e-5 * sqrt(batch/4): batch 4 ->
-        #   2.5e-5 is the real line's value, batch 32 -> 7e-5 is the family blocks'. Only jar's
-        #   3.5e-5 is a new number. decay_lr = peak/10, as in both.
-        # LADDER save = keep = 10,000 -> the same five rungs (10k..50k) the real repos carry, so a
-        #   step-matched comparison point exists for whichever rung the real side reports.
-        #
-        # cabinet has TWO configs. The real setup has a full-horizon policy (`higherZ`) and a
-        # `firsthalf` one that ends once the blocker is aside and the drawer is open; the sim side
-        # mirrors both. The firsthalf dataset was collected with --family cabinet_firsthalf under
-        # configs/firsthalf/cabinet_task0019.json, which also supplies its own prompt -- so its
-        # episodes caption the truncated task, and prompt_from_task picks that up here.
-                TrainConfig(
+        TrainConfig(
             # jar / natural_language -- identical to the mainline jar block in every field except
             # the rewritten dataset and the run identity, so the only variable is the prompt.
             name="pi05-base_datagen_v1_jar_joint_2cam_lora_promptnl",
@@ -1317,7 +1287,37 @@ def _build_configs() -> list[TrainConfig]:
             ).get_freeze_filter(),
             ema_decay=None,
         ),
-TrainConfig(
+        # ============ pi0.5 SIM2REAL single-task line (sim side of the real comparison) ============
+        # Each config trains on ONE base task's 60 demonstrations, matching how the real-robot
+        # checkpoints were made: real teleop collected 60 demos of a single task, so a family-level
+        # sim checkpoint (trained across all of a family's tasks) is the wrong scope to compare it
+        # with. Datasets: IDEAS-Lab-Northwestern/sim2real-<fam>-task<NNNN>-sim-joint-5cam, private,
+        # 60 episodes each, single prompt.
+        #
+        # MODEL / DATA / WARM START come from the datagen-v1 pi0.5 family blocks above, unchanged --
+        #   this is a SIM checkpoint and must read the sim camera schema and start from pi05_base
+        #   (the real line starts from pi0_droid; never cross the two).
+        # SCALE comes from the pi0 REAL-TELEOP blocks below: batch 4-32 with 50,000 steps and ONE
+        #   GPU PER RUN, not the family blocks' global batch 256. On datasets of 24-191k frames a
+        #   large batch would cut the gradient-update count by the same factor, and a sim-vs-real
+        #   difference could then be optimization rather than the transfer gap. 50,000 updates is
+        #   exactly what the real checkpoints got.
+        # BATCH is scaled with the dataset so the four runs see a COMPARABLE number of epochs
+        #   (6.3-8.4) rather than a comparable number of samples: the four tasks hold 60 demos each
+        #   but their episodes differ 8x in length, so a fixed batch would give cabinet ~1 epoch
+        #   while clutter got 8.
+        # LR interpolates between two shipped configs on peak = 2.5e-5 * sqrt(batch/4): batch 4 ->
+        #   2.5e-5 is the real line's value, batch 32 -> 7e-5 is the family blocks'. Only jar's
+        #   3.5e-5 is a new number. decay_lr = peak/10, as in both.
+        # LADDER save = keep = 10,000 -> the same five rungs (10k..50k) the real repos carry, so a
+        #   step-matched comparison point exists for whichever rung the real side reports.
+        #
+        # cabinet has TWO configs. The real setup has a full-horizon policy (`higherZ`) and a
+        # `firsthalf` one that ends once the blocker is aside and the drawer is open; the sim side
+        # mirrors both. The firsthalf dataset was collected with --family cabinet_firsthalf under
+        # configs/firsthalf/cabinet_task0019.json, which also supplies its own prompt -- so its
+        # episodes caption the truncated task, and prompt_from_task picks that up here.
+        TrainConfig(
             # clutter task_0048 -- the sim scene aligned with the real clutter setup.
             # 23,904 frames / batch 4 -> 8.4 epochs over 50,000 steps.
             name="pi05-base_sim2real_clutter_task0048_sim_lora",
